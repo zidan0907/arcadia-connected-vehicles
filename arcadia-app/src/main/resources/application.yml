@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: arcadia-connected-vehicles
+
+  # Exclude Redis auto-configuration while running in memory/Postgres mode
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+  datasource:
+    # Remove username:password@ from the URL string below:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Change from 'validate' to 'update' so Hibernate creates the tables automatically
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: false # Keep false for now since you want Hibernate/manual setup
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+    schemas:
+      - auth
+      - fleet
+      - operations
+      - ecodrive
+      - maintenance
+    default-schema: auth
+
+arcadia:
+  security:
+    # Set to "memory" right now (no Redis needed). Flip to "redis" later!
+    token-store: ${TOKEN_STORE:memory}
+    cookie:
+      secure: ${COOKIE_SECURE:false} # Set to true in HTTPS production
+      same-site: Lax
+    jwt:
+      secret: ${JWT_SECRET}
+      access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}       # 15 minutes
+      refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}  # 7 days
+      issuer: arcadia-connected-vehicles
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

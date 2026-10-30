@@ -1,0 +1,400 @@
+openapi: 3.0.3
+
+info:
+  title: Arcadia Identity & Authentication API
+  description: >
+    API for user sign-up, driver and fleet administrator authentication,
+    stateless JWT + HttpOnly cookie session management, refresh token rotation,
+    and pluggable token revocation.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local Spring Boot Monolith
+
+  - url: https://api.cv-pilot.azure-api.net
+    description: Azure API Management Gateway
+
+tags:
+  - name: Registration
+    description: User account sign-up and onboarding
+
+  - name: Authentication
+    description: User sign-in and JWT + HttpOnly cookie issuance
+
+  - name: Session Management
+    description: Token refresh rotation, current user profile, and logout
+
+paths:
+
+  /api/v1/auth/signup:
+    post:
+      tags:
+        - Registration
+      summary: Sign up and create a new user account
+      description: >
+        Registers a new driver or fleet administrator in PostgreSQL (auth.user_accounts)
+        with BCrypt password hashing and uniqueness checks on username and email.
+      operationId: signupUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+            example:
+              username: zidan.ali
+              email: zidan.ali@arcadia.com
+              password: Arcadia@2026
+              fullName: Zidan Ali
+              role: ROLE_DRIVER
+              assignedVin: MAKZ1234567890
+      responses:
+        '201':
+          description: User account created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignupResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Sign in and issue JWT tokens + HttpOnly cookies
+      description: >
+        Validates credentials against auth.user_accounts, returns signed Access
+        and Refresh JWTs in the response body, and sets arcadia_access_token
+        and arcadia_refresh_token HttpOnly cookies.
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              usernameOrEmail: zidan.ali@arcadia.com
+              password: Arcadia@2026
+      responses:
+        '200':
+          description: Successfully authenticated
+          headers:
+            Set-Cookie:
+              description: HttpOnly cookies containing arcadia_access_token and arcadia_refresh_token
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/refresh:
+    post:
+      tags:
+        - Session Management
+      summary: Rotate refresh token and issue a new JWT pair
+      description: >
+        Reads the refresh token from either the JSON request body or the
+        arcadia_refresh_token HttpOnly cookie, revokes the old token, and issues
+        a new token pair.
+      operationId: refreshToken
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Token pair rotated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/logout:
+    post:
+      tags:
+        - Session Management
+      summary: Logout and revoke active session tokens & cookies
+      description: >
+        Revokes the caller's access and refresh tokens and clears the
+        arcadia_access_token and arcadia_refresh_token HttpOnly cookies.
+      operationId: logoutUser
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '204':
+          description: Session tokens revoked and cookies cleared
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/auth/me:
+    get:
+      tags:
+        - Session Management
+      summary: Get current authenticated user profile
+      description: >
+        Returns the profile of the authenticated user resolved from either
+        the Authorization Bearer header or the arcadia_access_token cookie.
+      operationId: getCurrentUser
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Authenticated user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SignupRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+        - fullName
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          example: zidan.ali
+        email:
+          type: string
+          format: email
+          example: zidan.ali@arcadia.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          example: Arcadia@2026
+        fullName:
+          type: string
+          example: Zidan Ali
+        role:
+          type: string
+          enum:
+            - ROLE_DRIVER
+            - ROLE_FLEET_ADMIN
+          default: ROLE_DRIVER
+        assignedVin:
+          type: string
+          nullable: true
+          example: MAKZ1234567890
+
+    SignupResponse:
+      type: object
+      required:
+        - userId
+        - username
+        - email
+        - fullName
+        - role
+        - createdAt
+        - message
+      properties:
+        userId:
+          type: string
+          example: user-8f42b1
+        username:
+          type: string
+          example: zidan.ali
+        email:
+          type: string
+          example: zidan.ali@arcadia.com
+        fullName:
+          type: string
+          example: Zidan Ali
+        role:
+          type: string
+          enum:
+            - ROLE_DRIVER
+            - ROLE_FLEET_ADMIN
+        assignedVin:
+          type: string
+          nullable: true
+          example: MAKZ1234567890
+        createdAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+          example: Account registered successfully. Please log in to obtain your session tokens.
+
+    LoginRequest:
+      type: object
+      required:
+        - usernameOrEmail
+        - password
+      properties:
+        usernameOrEmail:
+          type: string
+          example: zidan.ali@arcadia.com
+        password:
+          type: string
+          format: password
+          example: Arcadia@2026
+
+    RefreshTokenRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+          description: Optional in body if supplied via arcadia_refresh_token cookie
+
+    AuthResponse:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+        - tokenType
+        - expiresIn
+        - userId
+        - username
+        - email
+        - fullName
+        - role
+        - issuedAt
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          example: 900
+        userId:
+          type: string
+          example: user-8f42b1
+        username:
+          type: string
+          example: zidan.ali
+        email:
+          type: string
+          example: zidan.ali@arcadia.com
+        fullName:
+          type: string
+          example: Zidan Ali
+        role:
+          type: string
+          enum:
+            - ROLE_DRIVER
+            - ROLE_FLEET_ADMIN
+        assignedVin:
+          type: string
+          nullable: true
+          example: MAKZ1234567890
+        issuedAt:
+          type: string
+          format: date-time
+
+    UserProfileResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+        assignedVin:
+          type: string
+        lastLoginAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required:
+        - transactionId
+        - errorCode
+        - message
+        - timestamp
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        errorCode:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        details:
+          type: object
+          additionalProperties:
+            type: string
+
+  responses:
+    BadRequestError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnauthorizedError:
+      description: Invalid credentials or expired/revoked token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ConflictError:
+      description: Username or email already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

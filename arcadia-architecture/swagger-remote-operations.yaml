@@ -1,0 +1,692 @@
+openapi: 3.0.3
+
+info:
+  title: Arcadia Remote Operations API
+  description: >
+    API for asynchronous vehicle actuation including door lock, door unlock,
+    climate control, live vehicle status monitoring, edge acknowledgment,
+    and asynchronous command lifecycle tracking.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local Spring Boot Monolith
+
+  - url: https://api.cv-pilot.azure-api.net
+    description: Azure API Management Gateway
+
+tags:
+  - name: Vehicle Commands
+    description: Remote vehicle command operations
+
+  - name: Command Status
+    description: Asynchronous command lifecycle and status operations
+
+  - name: Vehicle Status
+    description: Live vehicle operational status
+
+  - name: Vehicle Acknowledgment
+    description: Vehicle edge or simulator command acknowledgments
+
+
+paths:
+
+  /api/v1/vehicles/{vin}/commands:
+
+    post:
+      tags:
+        - Vehicle Commands
+
+      summary: Initiate asynchronous vehicle command
+
+      description: >
+        Initiates remote vehicle actuation such as door lock, door unlock,
+        climate start, or climate stop. The API immediately returns an
+        asynchronous command identifier that can be used to poll execution
+        status.
+
+      operationId: initiateCommand
+
+      parameters:
+
+        - name: vin
+          in: path
+          required: true
+          description: Vehicle Identification Number
+          schema:
+            type: string
+            minLength: 1
+            example: MAKZ1234567890
+
+        - name: X-Request-Id
+          in: header
+          required: false
+          description: >
+            Unique request identifier used for request tracing and
+            idempotency handling.
+          schema:
+            type: string
+            format: uuid
+            example: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+
+      requestBody:
+        required: true
+        content:
+
+          application/json:
+
+            schema:
+              $ref: '#/components/schemas/CommandRequest'
+
+            examples:
+
+              doorLock:
+                summary: Lock all vehicle doors
+                value:
+                  command: DOOR_LOCK
+                  source: MOBILE_APP
+                  requestedBy: user-1042
+                  params:
+                    doors: ALL
+                  timestamp: '2026-09-24T10:15:00Z'
+
+              doorUnlock:
+                summary: Unlock all vehicle doors
+                value:
+                  command: DOOR_UNLOCK
+                  source: MOBILE_APP
+                  requestedBy: user-1042
+                  params:
+                    doors: ALL
+                  timestamp: '2026-09-24T10:15:00Z'
+
+              climateStart:
+                summary: Start climate control
+                value:
+                  command: CLIMATE_START
+                  source: MOBILE_APP
+                  requestedBy: user-1042
+                  params:
+                    targetTemp: 21.5
+                  timestamp: '2026-09-24T10:15:00Z'
+
+              climateStop:
+                summary: Stop climate control
+                value:
+                  command: CLIMATE_STOP
+                  source: MOBILE_APP
+                  requestedBy: user-1042
+                  params: {}
+                  timestamp: '2026-09-24T10:15:00Z'
+
+      responses:
+
+        '202':
+          description: Command accepted for asynchronous processing
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/CommandAcceptedResponse'
+
+              examples:
+
+                queued:
+                  summary: Command queued for processing
+                  value:
+                    commandId: cmd-8f21a
+                    vin: MAKZ1234567890
+                    status: QUEUED
+                    acceptedAt: '2026-09-24T10:15:01Z'
+                    pollUrl: /api/v1/commands/cmd-8f21a
+
+                inProgress:
+                  summary: Command is being processed
+                  value:
+                    commandId: cmd-8f21a
+                    vin: MAKZ1234567890
+                    status: IN_PROGRESS
+                    acceptedAt: '2026-09-24T10:15:01Z'
+                    pollUrl: /api/v1/commands/cmd-8f21a
+
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+  /api/v1/commands/{commandId}:
+
+    get:
+      tags:
+        - Command Status
+
+      summary: Poll command execution status
+
+      description: >
+        Fetches the current status of a previously dispatched asynchronous
+        vehicle command from the Redis cache or command audit store.
+
+      operationId: getCommandStatus
+
+      parameters:
+
+        - name: commandId
+          in: path
+          required: true
+          description: Asynchronous command tracking identifier
+          schema:
+            type: string
+            example: cmd-8f21a
+
+      responses:
+
+        '200':
+          description: Current lifecycle state of the command
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/CommandStatusResponse'
+
+              examples:
+
+                inProgress:
+                  summary: Command is still in progress
+                  value:
+                    commandId: cmd-8f21a
+                    vin: MAKZ1234567890
+                    command: DOOR_LOCK
+                    status: IN_PROGRESS
+                    executedAt: null
+                    errorMessage: null
+
+                success:
+                  summary: Command executed successfully
+                  value:
+                    commandId: cmd-8f21a
+                    vin: MAKZ1234567890
+                    command: DOOR_LOCK
+                    status: SUCCESS
+                    executedAt: '2026-09-24T10:15:03Z'
+                    errorMessage: null
+
+                failed:
+                  summary: Command execution failed
+                  value:
+                    commandId: cmd-8f21a
+                    vin: MAKZ1234567890
+                    command: DOOR_LOCK
+                    status: FAILED
+                    executedAt: '2026-09-24T10:15:03Z'
+                    errorMessage: Vehicle actuator failed to execute command.
+
+                timedOut:
+                  summary: Command timed out
+                  value:
+                    commandId: cmd-8f21a
+                    vin: MAKZ1234567890
+                    command: DOOR_LOCK
+                    status: TIMED_OUT
+                    executedAt: null
+                    errorMessage: Vehicle did not respond within the configured timeout.
+
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+  /api/v1/vehicles/{vin}/status:
+
+    get:
+      tags:
+        - Vehicle Status
+
+      summary: Get live vehicle status
+
+      description: >
+        Returns the latest available vehicle operational state including
+        door lock condition, climate control state, battery level, and
+        synchronization timestamp.
+
+      operationId: getVehicleStatus
+
+      parameters:
+
+        - name: vin
+          in: path
+          required: true
+          description: Vehicle Identification Number
+          schema:
+            type: string
+            minLength: 1
+            example: MAKZ1234567890
+
+      responses:
+
+        '200':
+          description: Live vehicle operational state
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/VehicleStatusResponse'
+
+              example:
+                vin: MAKZ1234567890
+                doorLockStatus: LOCKED
+                climateActive: false
+                batteryLevelPercent: 84
+                lastSyncedAt: '2026-10-08T10:14:20Z'
+
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+  /api/v1/vehicles/{vin}/commands/{commandId}/ack:
+
+    post:
+      tags:
+        - Vehicle Acknowledgment
+
+      summary: Acknowledge command execution
+
+      description: >
+        Callback invoked by the vehicle TCU agent or simulator after
+        physical relay actuation has completed.
+
+      operationId: acknowledgeCommand
+
+      parameters:
+
+        - name: vin
+          in: path
+          required: true
+          description: Vehicle Identification Number
+          schema:
+            type: string
+            example: MAKZ1234567890
+
+        - name: commandId
+          in: path
+          required: true
+          description: Asynchronous command tracking identifier
+          schema:
+            type: string
+            example: cmd-8f21a
+
+      requestBody:
+        required: true
+        content:
+
+          application/json:
+
+            schema:
+              $ref: '#/components/schemas/CommandAckRequest'
+
+            examples:
+
+              success:
+                summary: Vehicle successfully executed command
+                value:
+                  status: SUCCESS
+                  executedAt: '2026-09-24T10:15:03Z'
+                  errorMessage: null
+
+              failure:
+                summary: Vehicle failed to execute command
+                value:
+                  status: FAILED
+                  executedAt: '2026-09-24T10:15:03Z'
+                  errorMessage: Vehicle actuator failed to execute command.
+
+      responses:
+
+        '200':
+          description: Acknowledgment recorded successfully
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/CommandStatusResponse'
+
+              example:
+                commandId: cmd-8f21a
+                vin: MAKZ1234567890
+                command: DOOR_LOCK
+                status: SUCCESS
+                executedAt: '2026-09-24T10:15:03Z'
+                errorMessage: null
+
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+components:
+
+  schemas:
+
+    CommandRequest:
+
+      type: object
+
+      required:
+        - command
+        - source
+        - requestedBy
+        - timestamp
+
+      properties:
+
+        command:
+          type: string
+          description: Remote vehicle command to execute
+          enum:
+            - DOOR_LOCK
+            - DOOR_UNLOCK
+            - CLIMATE_START
+            - CLIMATE_STOP
+          example: DOOR_LOCK
+
+        source:
+          type: string
+          description: Origin of the command
+          example: MOBILE_APP
+
+        requestedBy:
+          type: string
+          description: Identifier of the user requesting the command
+          example: user-1042
+
+        params:
+          type: object
+          description: >
+            Optional command-specific parameters. The structure depends
+            on the selected command.
+          additionalProperties: true
+          example:
+            doors: ALL
+            targetTemp: 21.5
+
+        timestamp:
+          type: string
+          format: date-time
+          description: Time at which the command was requested
+          example: '2026-09-24T10:15:00Z'
+
+
+    CommandAcceptedResponse:
+
+      type: object
+
+      required:
+        - commandId
+        - vin
+        - status
+        - acceptedAt
+        - pollUrl
+
+      properties:
+
+        commandId:
+          type: string
+          description: Unique asynchronous command identifier
+          example: cmd-8f21a
+
+        vin:
+          type: string
+          description: Vehicle Identification Number
+          example: MAKZ1234567890
+
+        status:
+          type: string
+          description: Initial asynchronous command state
+          enum:
+            - IN_PROGRESS
+            - ACCEPTED
+            - QUEUED
+          example: IN_PROGRESS
+
+        acceptedAt:
+          type: string
+          format: date-time
+          description: Time at which the command was accepted
+          example: '2026-09-24T10:15:01Z'
+
+        pollUrl:
+          type: string
+          description: Relative URL used to poll command status
+          example: /api/v1/commands/cmd-8f21a
+
+
+    CommandStatusResponse:
+
+      type: object
+
+      required:
+        - commandId
+        - vin
+        - command
+        - status
+
+      properties:
+
+        commandId:
+          type: string
+          description: Unique asynchronous command identifier
+          example: cmd-8f21a
+
+        vin:
+          type: string
+          description: Vehicle Identification Number
+          example: MAKZ1234567890
+
+        command:
+          type: string
+          description: Vehicle command that was requested
+          enum:
+            - DOOR_LOCK
+            - DOOR_UNLOCK
+            - CLIMATE_START
+            - CLIMATE_STOP
+          example: DOOR_LOCK
+
+        status:
+          type: string
+          description: Current command lifecycle state
+          enum:
+            - IN_PROGRESS
+            - SUCCESS
+            - FAILED
+            - TIMED_OUT
+          example: SUCCESS
+
+        executedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time at which command execution completed
+          example: '2026-09-24T10:15:03Z'
+
+        errorMessage:
+          type: string
+          nullable: true
+          description: Error details when command execution fails
+          example: null
+
+
+    VehicleStatusResponse:
+
+      type: object
+
+      required:
+        - vin
+        - doorLockStatus
+        - climateActive
+        - batteryLevelPercent
+        - lastSyncedAt
+
+      properties:
+
+        vin:
+          type: string
+          description: Vehicle Identification Number
+          example: MAKZ1234567890
+
+        doorLockStatus:
+          type: string
+          description: Current vehicle door locking state
+          enum:
+            - LOCKED
+            - UNLOCKED
+            - PARTIALLY_LOCKED
+          example: LOCKED
+
+        climateActive:
+          type: boolean
+          description: Indicates whether climate control is active
+          example: false
+
+        batteryLevelPercent:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 100
+          description: Vehicle battery level as a percentage
+          example: 84
+
+        lastSyncedAt:
+          type: string
+          format: date-time
+          description: Time when vehicle status was last synchronized
+          example: '2026-10-08T10:14:20Z'
+
+
+    CommandAckRequest:
+
+      type: object
+
+      required:
+        - status
+
+      properties:
+
+        status:
+          type: string
+          description: Result of physical vehicle command execution
+          enum:
+            - SUCCESS
+            - FAILED
+          example: SUCCESS
+
+        executedAt:
+          type: string
+          format: date-time
+          description: Time when the vehicle completed command execution
+          example: '2026-09-24T10:15:03Z'
+
+        errorMessage:
+          type: string
+          nullable: true
+          description: Error message when execution fails
+          example: null
+
+
+    ErrorResponse:
+
+      type: object
+
+      required:
+        - errorCode
+        - message
+        - timestamp
+
+      properties:
+
+        errorCode:
+          type: string
+          description: Application-specific error code
+          example: RESOURCE_NOT_FOUND
+
+        message:
+          type: string
+          description: Human-readable error message
+          example: Vehicle with VIN MAKZ1234567890 was not found.
+
+        timestamp:
+          type: string
+          format: date-time
+          description: Time at which the error occurred
+          example: '2026-10-08T10:15:00Z'
+
+
+  responses:
+
+    BadRequestError:
+
+      description: Invalid request payload or validation failed
+
+      content:
+
+        application/json:
+
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+          example:
+            errorCode: INVALID_REQUEST
+            message: The request payload failed validation.
+            timestamp: '2026-10-08T10:15:00Z'
+
+
+    NotFoundError:
+
+      description: Requested resource was not found
+
+      content:
+
+        application/json:
+
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+          example:
+            errorCode: RESOURCE_NOT_FOUND
+            message: Vehicle with VIN MAKZ1234567890 was not found.
+            timestamp: '2026-10-08T10:15:00Z'
+
+
+    InternalServerError:
+
+      description: Unexpected server-side error
+
+      content:
+
+        application/json:
+
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+          example:
+            errorCode: INTERNAL_SERVER_ERROR
+            message: An unexpected error occurred while processing the request.
+            timestamp: '2026-10-08T10:15:00Z'
