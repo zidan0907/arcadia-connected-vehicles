@@ -1,8 +1,9 @@
 package com.arcadia.common.event;
 
 import java.time.Instant;
+import java.util.UUID;
 
-/** Marker contract for events published between bounded contexts. */
 public interface DomainEvent {
+    UUID eventId();
     Instant occurredAt();
 }

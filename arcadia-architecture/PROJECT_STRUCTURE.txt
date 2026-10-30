@@ -1,0 +1,278 @@
+arcadia-connected-vehicles/
+├── .idea/
+├── .mvn/
+│   └── wrapper/
+│       ├── maven-wrapper.jar
+│       └── maven-wrapper.properties
+├── docker/
+│   ├── docker-compose.yml                      # PostgreSQL & Redis container configurations
+│   └── postgres-init/
+│       └── 01-create-schemas.sql               # Creates auth, fleet, operations, ecodrive, maintenance schemas
+├── docs/
+│   └── openapi/
+│       ├── swagger-auth.yaml                   # Authentication & Session OpenAPI spec
+│       ├── swagger-remote-operations.yaml      # Screen 1: Remote Operations OpenAPI spec
+│       ├── swagger-eco-challenge.yaml          # Screen 2: Eco Challenge OpenAPI spec
+│       └── swagger-predictive-maintenance.yaml # Screen 3: Predictive Maintenance OpenAPI spec
+│
+├── pom.xml                                     # ROOT PARENT POM (<packaging>pom</packaging>, dependencyManagement)
+│
+│   # =========================================================================
+│   # 1. SHARED CROSS-CUTTING INFRASTRUCTURE & CONTRACTS MODULE
+│   # =========================================================================
+├── arcadia-common/
+│   ├── pom.xml                                 # Common module POM
+│   └── src/
+│       └── main/
+│           └── java/
+│               └── com/
+│                   └── arcadia/
+│                       └── cv/
+│                           └── common/             # Cross-cutting platform infrastructure
+│                               ├── config/
+│                               │   ├── OpenApiConfig.java           # Aggregates Swagger specs into Swagger-UI
+│                               │   ├── RedisConfig.java             # RedisTemplate & CacheManager configuration
+│                               │   ├── AsyncConfig.java             # Thread pool for in-memory event listeners
+│                               │   ├── SecurityConfig.java          # Spring Security filter chain & permitAll/JWT config
+│                               │   └── WebMvcConfig.java            # CORS & interceptors
+│                               │
+│                               ├── error/          # Centralized Exception & Fault Architecture
+│                               │   ├── ErrorCode.java                # Mapped error code enum (400, 401, 404, 409, 500)
+│                               │   ├── ErrorResponse.java            # Unified JSON error payload matching Swagger
+│                               │   ├── GlobalExceptionHandler.java   # Central @RestControllerAdvice
+│                               │   └── exceptions/
+│                               │       ├── ApiException.java               # Base abstract runtime exception
+│                               │       ├── BadRequestAlertException.java   # 400 Bad Request / Validation failure
+│                               │       ├── UnauthorizedException.java      # 401 Authentication failure / expired token
+│                               │       ├── ResourceNotFoundException.java  # 404 Entity / Resource Not Found
+│                               │       ├── CommandTimeoutException.java    # 408/504 Vehicle unreachable / timeout
+│                               │       ├── ResourceConflictException.java  # 409 Duplicate key / conflict
+│                               │       └── ExternalServiceException.java   # 502/503 Push / downstream failure
+│                               │
+│                               └── event/
+│                                   ├── DomainEvent.java             # Marker interface for internal domain events
+│                                   └── TripCompletedEvent.java      # Internal bus event: EcoDrive -> Maintenance
+│
+│   # =========================================================================
+│   # 2. SHARED FLEET & DRIVER REFERENCE CONTEXT MODULE
+│   # =========================================================================
+├── arcadia-fleet/
+│   ├── pom.xml                                 # Fleet module POM (Depends on arcadia-common)
+│   └── src/
+│       └── main/
+│           └── java/
+│               └── com/
+│                   └── arcadia/
+│                       └── cv/
+│                           └── fleet/              # SHARED FLEET & DRIVER REFERENCE CONTEXT
+│                               ├── domain/
+│                               │   ├── Driver.java
+│                               │   └── Vehicle.java
+│                               └── repository/
+│                                   ├── DriverRepository.java
+│                                   └── VehicleRepository.java
+│
+│   # =========================================================================
+│   # 3. IDENTITY & AUTHENTICATION MODULE
+│   # =========================================================================
+├── arcadia-auth/
+│   ├── pom.xml                                 # Auth module POM (Depends on arcadia-common, arcadia-fleet)
+│   └── src/
+│       ├── main/
+│       │   └── java/
+│       │       └── com/
+│       │           └── arcadia/
+│       │               └── cv/
+│       │                   └── auth/               # IDENTITY & AUTHENTICATION MODULE
+│       │                       ├── api/
+│       │                       │   ├── dto/
+│       │                       │   │   ├── AuthResponse.java
+│       │                       │   │   ├── LoginRequest.java
+│       │                       │   │   └── RefreshTokenRequest.java
+│       │                       │   └── AuthController.java         # /api/v1/auth/login, /refresh, /logout
+│       │                       ├── domain/
+│       │                       │   ├── Role.java                   # ROLE_DRIVER, ROLE_FLEET_ADMIN
+│       │                       │   └── UserAccount.java            # User credentials & authority mapping
+│       │                       ├── repository/
+│       │                       │   └── UserAccountRepository.java
+│       │                       ├── security/
+│       │                       │   ├── JwtAuthenticationFilter.java # Intercepts & validates Bearer tokens
+│       │                       │   └── JwtTokenProvider.java       # Issues, signs, and parses JWTs
+│       │                       └── service/
+│       │                           ├── AuthService.java
+│       │                           └── impl/
+│       │                               └── AuthServiceImpl.java    # Handles credentials, sessions & Redis blacklist
+│       └── test/
+│           └── java/
+│               └── com/
+│                   └── arcadia/
+│                       └── cv/
+│                           └── auth/AuthControllerTest.java
+│
+│   # =========================================================================
+│   # 4. SCREEN 1: REMOTE OPERATIONS MODULE
+│   # =========================================================================
+├── arcadia-operations/
+│   ├── pom.xml                                 # Operations module POM (Depends on arcadia-common, arcadia-fleet)
+│   └── src/
+│       ├── main/
+│       │   └── java/
+│       │       └── com/
+│       │           └── arcadia/
+│       │               └── cv/
+│       │                   └── operations/         # SCREEN 1: REMOTE OPERATIONS MODULE
+│       │                       ├── api/
+│       │                       │   ├── dto/
+│       │                       │   │   ├── CommandAckRequest.java
+│       │                       │   │   ├── CommandAcceptedResponse.java
+│       │                       │   │   ├── CommandRequest.java
+│       │                       │   │   ├── CommandStatusResponse.java
+│       │                       │   │   └── VehicleStatusResponse.java
+│       │                       │   └── OperationsController.java   # /api/v1/vehicles/{vin}/commands/**
+│       │                       ├── domain/
+│       │                       │   ├── CommandStatus.java          # IN_PROGRESS, SUCCESS, FAILED, TIMED_OUT
+│       │                       │   ├── CommandType.java            # DOOR_LOCK, DOOR_UNLOCK, CLIMATE_START
+│       │                       │   └── RemoteCommand.java
+│       │                       ├── repository/
+│       │                       │   └── RemoteCommandRepository.java
+│       │                       ├── cache/
+│       │                       │   └── CommandStateCache.java       # Redis cmd:{id} polling keys with 60s TTL
+│       │                       └── service/
+│       │                           ├── OperationsService.java
+│       │                           └── impl/
+│       │                               └── OperationsServiceImpl.java
+│       └── test/
+│           └── java/
+│               └── com/
+│                   └── arcadia/
+│                       └── cv/
+│                           └── operations/OperationsControllerTest.java
+│
+│   # =========================================================================
+│   # 5. SCREEN 2: ECO CHALLENGE MODULE
+│   # =========================================================================
+├── arcadia-ecodrive/
+│   ├── pom.xml                                 # EcoDrive module POM (Depends on arcadia-common, arcadia-fleet)
+│   └── src/
+│       ├── main/
+│       │   └── java/
+│       │       └── com/
+│       │           └── arcadia/
+│       │               └── cv/
+│       │                   └── ecodrive/           # SCREEN 2: ECO CHALLENGE MODULE
+│       │                       ├── api/
+│       │                       │   ├── dto/
+│       │                       │   │   ├── DriverRankingItem.java
+│       │                       │   │   ├── EcoScoreResponse.java
+│       │                       │   │   ├── LeaderboardResponse.java
+│       │                       │   │   ├── TripMetrics.java
+│       │                       │   │   └── TripTelemetryRequest.java
+│       │                       │   └── EcoChallengeController.java # /api/v1/telemetry/trips, /leaderboard
+│       │                       ├── domain/
+│       │                       │   ├── DriverBadge.java
+│       │                       │   ├── DriverEcoScore.java
+│       │                       │   └── TripLog.java
+│       │                       ├── repository/
+│       │                       │   ├── DriverBadgeRepository.java
+│       │                       │   ├── DriverEcoScoreRepository.java
+│       │                       │   └── TripLogRepository.java
+│       │                       ├── service/
+│       │                       │   ├── EcoScoringEngine.java
+│       │                       │   ├── LeaderboardService.java
+│       │                       │   ├── strategy/
+│       │                       │   │   ├── EcoScoringStrategy.java
+│       │                       │   │   └── StandardRuleEcoScoringStrategy.java
+│       │                       │   └── impl/
+│       │                       │       ├── EcoScoringEngineImpl.java
+│       │                       │       └── RedisLeaderboardServiceImpl.java # Redis ZSET leaderboards
+│       └── test/
+│           └── java/
+│               └── com/
+│                   └── arcadia/
+│                       └── cv/
+│                           └── ecodrive/EcoChallengeControllerTest.java
+│
+│   # =========================================================================
+│   # 6. SCREEN 3: PREDICTIVE MAINTENANCE MODULE
+│   # =========================================================================
+├── arcadia-maintenance/
+│   ├── pom.xml                                 # Maintenance module POM (Depends on arcadia-common, arcadia-fleet)
+│   └── src/
+│       ├── main/
+│       │   └── java/
+│       │       └── com/
+│       │           └── arcadia/
+│       │               └── cv/
+│       │                   └── maintenance/        # SCREEN 3: PREDICTIVE MAINTENANCE MODULE
+│       │                       ├── api/
+│       │                       │   ├── dto/
+│       │                       │   │   ├── ComponentHealthItem.java
+│       │                       │   │   ├── DeviceRegistrationRequest.java
+│       │                       │   │   ├── DeviceRegistrationResponse.java
+│       │                       │   │   ├── MaintenanceAlert.java
+│       │                       │   │   ├── ServiceBookingRequest.java
+│       │                       │   │   ├── ServiceBookingResponse.java
+│       │                       │   │   └── VehicleHealthResponse.java
+│       │                       │   └── MaintenanceController.java  # /api/v1/vehicles/{vin}/health, /alerts
+│       │                       ├── domain/
+│       │                       │   ├── AlertSeverity.java          # LOW, MEDIUM, HIGH
+│       │                       │   ├── AlertStatus.java            # OPEN, RESOLVED, DISMISSED
+│       │                       │   ├── ComponentHealth.java
+│       │                       │   ├── DeviceRegistration.java
+│       │                       │   ├── MaintenanceAlertEntity.java
+│       │                       │   └── ServiceBooking.java
+│       │                       ├── repository/
+│       │                       │   ├── ComponentHealthRepository.java
+│       │                       │   ├── DeviceRegistrationRepository.java
+│       │                       │   ├── MaintenanceAlertRepository.java
+│       │                       │   └── ServiceBookingRepository.java
+│       │                       ├── service/
+│       │                       │   ├── MaintenanceService.java
+│       │                       │   ├── PushNotificationService.java
+│       │                       │   ├── rules/
+│       │                       │   │   ├── DegradationRule.java
+│       │                       │   │   ├── BatteryDegradationRule.java
+│       │                       │   │   ├── BrakePadDegradationRule.java
+│       │                       │   │   └── TyrePressureDegradationRule.java
+│       │                       │   └── impl/
+│       │                       │       ├── MaintenanceServiceImpl.java
+│       │                       │       └── MockPushNotificationServiceImpl.java
+│       │                       └── listener/
+│       │                           └── TripCompletedEventListener.java  # Listens to TripCompletedEvent asynchronously
+│       └── test/
+│           └── java/
+│               └── com/
+│                   └── arcadia/
+│                       └── cv/
+│                           └── maintenance/MaintenanceControllerTest.java
+│
+│   # =========================================================================
+│   # 7. RUNNABLE APPLICATION AGGREGATOR & STARTER MODULE
+│   # =========================================================================
+├── arcadia-app/
+│   ├── pom.xml                                 # Aggregates all child modules + spring-boot-maven-plugin
+│   └── src/
+│       ├── main/
+│       │   ├── java/
+│       │   │   └── com/
+│       │   │       └── arcadia/
+│       │   │           └── cv/
+│       │   │               └── ArcadiaApplication.java
+│       │   └── resources/
+│       │       ├── db/migration/                   # Flyway automated migration scripts
+│       │       │   ├── V1__init_auth_schema.sql
+│       │       │   ├── V2__init_fleet_schema.sql
+│       │       │   ├── V3__init_operations_schema.sql
+│       │       │   ├── V4__init_ecodrive_schema.sql
+│       │       │   └── V5__init_maintenance_schema.sql
+│       │       ├── application.yml                 # Database, Redis, and JPA base configuration
+│       │       ├── application-local.yml           # Local dev profile
+│       │       └── application-pilot.yml           # Azure cloud pilot profile
+│       └── test/
+│           └── resources/
+│               └── application-test.yml
+│
+├── .gitignore
+├── mvnw
+├── mvnw.cmd
+└── README.md

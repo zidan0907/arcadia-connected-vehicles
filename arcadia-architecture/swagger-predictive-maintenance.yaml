@@ -1,0 +1,676 @@
+openapi: 3.0.3
+
+info:
+  title: Arcadia Predictive Maintenance API
+  description: >
+    API for vehicle component health monitoring, predictive diagnostic alerts,
+    push notification registration, and vehicle service booking.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local Spring Boot Monolith
+
+  - url: https://api.cv-pilot.azure-api.net
+    description: Azure API Management Gateway
+
+tags:
+  - name: Vehicle Health
+    description: Vehicle component health and degradation monitoring
+
+  - name: Maintenance Alerts
+    description: Predictive diagnostic alerts and recommendations
+
+  - name: Device Registration
+    description: Mobile device registration for push notifications
+
+  - name: Service Bookings
+    description: Vehicle service appointment booking
+
+
+paths:
+
+  /api/v1/vehicles/{vin}/health:
+
+    get:
+      tags:
+        - Vehicle Health
+
+      summary: Get vehicle component health checklist
+
+      description: >
+        Retrieves degradation and health metrics for core vehicle components
+        including battery, brakes, tyres, and fluids.
+
+      operationId: getVehicleHealth
+
+      parameters:
+
+        - name: vin
+          in: path
+          required: true
+          description: Vehicle Identification Number
+          schema:
+            type: string
+            minLength: 1
+            example: MAKZ1234567890
+
+      responses:
+
+        '200':
+          description: Component health checklist
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/VehicleHealthResponse'
+
+              example:
+                vin: MAKZ1234567890
+                overallStatus: ATTENTION_REQUIRED
+                components:
+                  - component: BATTERY
+                    status: OK
+                    metricValue: 87% health
+                    lastInspectedAt: '2026-10-08T09:30:00Z'
+
+                  - component: BRAKE_PAD_FRONT
+                    status: CRITICAL
+                    metricValue: 12% thickness
+                    lastInspectedAt: '2026-10-08T09:30:00Z'
+
+                  - component: TYRE_FRONT_LEFT
+                    status: WARNING
+                    metricValue: 31 PSI
+                    lastInspectedAt: '2026-10-08T09:30:00Z'
+
+                  - component: COOLANT
+                    status: OK
+                    metricValue: Normal
+                    lastInspectedAt: '2026-10-08T09:30:00Z'
+
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+  /api/v1/vehicles/{vin}/alerts:
+
+    get:
+      tags:
+        - Maintenance Alerts
+
+      summary: Get diagnostic maintenance alerts
+
+      description: >
+        Fetches predictive maintenance alerts with severity ratings,
+        predicted failure windows, recommendations, and current status.
+
+      operationId: getVehicleAlerts
+
+      parameters:
+
+        - name: vin
+          in: path
+          required: true
+          description: Vehicle Identification Number
+          schema:
+            type: string
+            minLength: 1
+            example: MAKZ1234567890
+
+        - name: status
+          in: query
+          required: false
+          description: Filter alerts by their current status
+          schema:
+            type: string
+            enum:
+              - OPEN
+              - RESOLVED
+              - DISMISSED
+            default: OPEN
+            example: OPEN
+
+      responses:
+
+        '200':
+          description: List of maintenance alerts
+          content:
+
+            application/json:
+
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MaintenanceAlert'
+
+              example:
+
+                - alertId: alt-3391
+                  component: BRAKE_PAD_FRONT
+                  severity: HIGH
+                  predictedFailureIn: 12 days
+                  recommendation: Book service
+                  status: OPEN
+                  raisedAt: '2026-09-24T10:20:00Z'
+
+                - alertId: alt-4412
+                  component: TYRE_FRONT_LEFT
+                  severity: MEDIUM
+                  predictedFailureIn: 30 days
+                  recommendation: Check tyre pressure
+                  status: OPEN
+                  raisedAt: '2026-09-24T10:25:00Z'
+
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+  /api/v1/devices/register:
+
+    post:
+      tags:
+        - Device Registration
+
+      summary: Register mobile device token for push alerts
+
+      description: >
+        Registers an FCM or APNs push notification token for receiving
+        critical diagnostic and predictive maintenance alerts.
+
+      operationId: registerDevice
+
+      requestBody:
+        required: true
+        content:
+
+          application/json:
+
+            schema:
+              $ref: '#/components/schemas/DeviceRegistrationRequest'
+
+            examples:
+
+              androidDevice:
+                summary: Register Android device
+                value:
+                  vin: MAKZ1234567890
+                  deviceToken: fcm-Ab12Cd34
+                  platform: ANDROID
+                  topics:
+                    - MAINTENANCE_ALERTS
+
+              iosDevice:
+                summary: Register iOS device
+                value:
+                  vin: MAKZ1234567890
+                  deviceToken: apns-Xy98Zz76
+                  platform: IOS
+                  topics:
+                    - MAINTENANCE_ALERTS
+                    - SERVICE_REMINDERS
+
+      responses:
+
+        '200':
+          description: Device token registered successfully
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/DeviceRegistrationResponse'
+
+              example:
+                registrationId: reg-7821
+                vin: MAKZ1234567890
+                platform: ANDROID
+                status: REGISTERED
+
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+  /api/v1/vehicles/{vin}/service-bookings:
+
+    post:
+      tags:
+        - Service Bookings
+
+      summary: Book a service appointment
+
+      description: >
+        Creates a service appointment from a predictive maintenance alert.
+        The request contains the preferred service date and selected
+        service center.
+
+      operationId: bookService
+
+      parameters:
+
+        - name: vin
+          in: path
+          required: true
+          description: Vehicle Identification Number
+          schema:
+            type: string
+            minLength: 1
+            example: MAKZ1234567890
+
+      requestBody:
+        required: true
+        content:
+
+          application/json:
+
+            schema:
+              $ref: '#/components/schemas/ServiceBookingRequest'
+
+            examples:
+
+              brakeService:
+                summary: Book service for brake pad alert
+                value:
+                  alertId: alt-3391
+                  preferredDate: '2026-10-15'
+                  serviceCenterId: sc-bangalore-east-01
+
+              tyreService:
+                summary: Book service for tyre alert
+                value:
+                  alertId: alt-4412
+                  preferredDate: '2026-10-18'
+                  serviceCenterId: sc-bangalore-east-01
+
+      responses:
+
+        '201':
+          description: Service appointment created
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/ServiceBookingResponse'
+
+              example:
+                bookingId: bk-9941a
+                status: CONFIRMED
+                scheduledDate: '2026-10-15'
+                serviceCenterName: Whitefield Auto Services
+
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+components:
+
+  schemas:
+
+    VehicleHealthResponse:
+
+      type: object
+
+      required:
+        - vin
+        - overallStatus
+        - components
+
+      properties:
+
+        vin:
+          type: string
+          description: Vehicle Identification Number
+          example: MAKZ1234567890
+
+        overallStatus:
+          type: string
+          description: Overall health status of the vehicle
+          enum:
+            - GOOD
+            - ATTENTION_REQUIRED
+            - CRITICAL
+          example: ATTENTION_REQUIRED
+
+        components:
+          type: array
+          description: Health status of individual vehicle components
+          items:
+            $ref: '#/components/schemas/ComponentHealthItem'
+
+
+    ComponentHealthItem:
+
+      type: object
+
+      required:
+        - component
+        - status
+        - metricValue
+        - lastInspectedAt
+
+      properties:
+
+        component:
+          type: string
+          description: Vehicle component being monitored
+          example: BRAKE_PAD_FRONT
+
+        status:
+          type: string
+          description: Current component health state
+          enum:
+            - OK
+            - WARNING
+            - CRITICAL
+          example: CRITICAL
+
+        metricValue:
+          type: string
+          description: Latest measured component health metric
+          example: 12% thickness
+
+        lastInspectedAt:
+          type: string
+          format: date-time
+          description: Time when the component was last inspected
+          example: '2026-10-08T09:30:00Z'
+
+
+    MaintenanceAlert:
+
+      type: object
+
+      required:
+        - alertId
+        - component
+        - severity
+        - predictedFailureIn
+        - recommendation
+        - status
+        - raisedAt
+
+      properties:
+
+        alertId:
+          type: string
+          description: Unique identifier of the maintenance alert
+          example: alt-3391
+
+        component:
+          type: string
+          description: Vehicle component associated with the alert
+          example: BRAKE_PAD_FRONT
+
+        severity:
+          type: string
+          description: Severity of the predicted maintenance issue
+          enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+          example: HIGH
+
+        predictedFailureIn:
+          type: string
+          description: Estimated time until potential component failure
+          example: 12 days
+
+        recommendation:
+          type: string
+          description: Recommended action for the driver
+          example: Book service
+
+        status:
+          type: string
+          description: Current state of the maintenance alert
+          enum:
+            - OPEN
+            - RESOLVED
+            - DISMISSED
+          example: OPEN
+
+        raisedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the alert was generated
+          example: '2026-09-24T10:20:00Z'
+
+
+    DeviceRegistrationRequest:
+
+      type: object
+
+      required:
+        - vin
+        - deviceToken
+        - platform
+
+      properties:
+
+        vin:
+          type: string
+          description: Vehicle associated with the mobile device
+          example: MAKZ1234567890
+
+        deviceToken:
+          type: string
+          description: FCM or APNs device registration token
+          example: fcm-Ab12Cd34
+
+        platform:
+          type: string
+          description: Mobile operating system
+          enum:
+            - ANDROID
+            - IOS
+          example: ANDROID
+
+        topics:
+          type: array
+          description: Push notification topics to subscribe to
+          items:
+            type: string
+          example:
+            - MAINTENANCE_ALERTS
+
+
+    DeviceRegistrationResponse:
+
+      type: object
+
+      required:
+        - registrationId
+        - vin
+        - platform
+        - status
+
+      properties:
+
+        registrationId:
+          type: string
+          description: Unique device registration identifier
+          example: reg-7821
+
+        vin:
+          type: string
+          description: Associated vehicle VIN
+          example: MAKZ1234567890
+
+        platform:
+          type: string
+          description: Mobile operating system
+          enum:
+            - ANDROID
+            - IOS
+          example: ANDROID
+
+        status:
+          type: string
+          description: Device registration state
+          enum:
+            - REGISTERED
+            - UPDATED
+          example: REGISTERED
+
+
+    ServiceBookingRequest:
+
+      type: object
+
+      required:
+        - alertId
+        - preferredDate
+        - serviceCenterId
+
+      properties:
+
+        alertId:
+          type: string
+          description: Predictive maintenance alert associated with the booking
+          example: alt-3391
+
+        preferredDate:
+          type: string
+          format: date
+          description: Driver's preferred service appointment date
+          example: '2026-10-15'
+
+        serviceCenterId:
+          type: string
+          description: Identifier of the selected service center
+          example: sc-bangalore-east-01
+
+
+    ServiceBookingResponse:
+
+      type: object
+
+      required:
+        - bookingId
+        - status
+        - scheduledDate
+        - serviceCenterName
+
+      properties:
+
+        bookingId:
+          type: string
+          description: Unique service booking identifier
+          example: bk-9941a
+
+        status:
+          type: string
+          description: Current service booking status
+          enum:
+            - CONFIRMED
+            - PENDING_CONFIRMATION
+          example: CONFIRMED
+
+        scheduledDate:
+          type: string
+          format: date
+          description: Scheduled service appointment date
+          example: '2026-10-15'
+
+        serviceCenterName:
+          type: string
+          description: Display name of the service center
+          example: Whitefield Auto Services
+
+
+    ErrorResponse:
+
+      type: object
+
+      required:
+        - errorCode
+        - message
+        - timestamp
+
+      properties:
+
+        errorCode:
+          type: string
+          description: Application-specific error code
+          example: RESOURCE_NOT_FOUND
+
+        message:
+          type: string
+          description: Human-readable error message
+          example: Vehicle with VIN MAKZ1234567890 was not found.
+
+        timestamp:
+          type: string
+          format: date-time
+          description: Time when the error occurred
+          example: '2026-10-08T10:15:00Z'
+
+
+  responses:
+
+    BadRequestError:
+
+      description: Invalid request payload or validation failed
+
+      content:
+
+        application/json:
+
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+          example:
+            errorCode: INVALID_REQUEST
+            message: The request payload failed validation.
+            timestamp: '2026-10-08T10:15:00Z'
+
+
+    NotFoundError:
+
+      description: Requested resource was not found
+
+      content:
+
+        application/json:
+
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+          example:
+            errorCode: RESOURCE_NOT_FOUND
+            message: Vehicle with VIN MAKZ1234567890 was not found.
+            timestamp: '2026-10-08T10:15:00Z'
+
+
+    InternalServerError:
+
+      description: Unexpected server-side error
+
+      content:
+
+        application/json:
+
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+          example:
+            errorCode: INTERNAL_SERVER_ERROR
+            message: An unexpected error occurred while processing the request.
+            timestamp: '2026-10-08T10:15:00Z'

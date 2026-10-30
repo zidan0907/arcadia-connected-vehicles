@@ -1,21 +1,30 @@
 package com.arcadia.common.exceptions;
 
 import com.arcadia.common.error.ErrorCode;
+import lombok.Getter;
+import org.springframework.http.HttpStatus;
 
-import java.util.Objects;
-
+@Getter
 public abstract class ApiException extends RuntimeException {
+
     private final ErrorCode errorCode;
+    private final HttpStatus httpStatus;
+
+    protected ApiException(ErrorCode errorCode) {
+        super(errorCode.getDefaultMessage());
+        this.errorCode = errorCode;
+        this.httpStatus = errorCode.getHttpStatus();
+    }
 
     protected ApiException(ErrorCode errorCode, String message) {
         super(message);
-        this.errorCode = Objects.requireNonNull(errorCode, "errorCode must not be null");
+        this.errorCode = errorCode;
+        this.httpStatus = errorCode.getHttpStatus();
     }
 
     protected ApiException(ErrorCode errorCode, String message, Throwable cause) {
         super(message, cause);
-        this.errorCode = Objects.requireNonNull(errorCode, "errorCode must not be null");
+        this.errorCode = errorCode;
+        this.httpStatus = errorCode.getHttpStatus();
     }
-
-    public ErrorCode getErrorCode() { return errorCode; }
 }

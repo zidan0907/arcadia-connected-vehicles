@@ -1,0 +1,561 @@
+openapi: 3.0.3
+
+info:
+  title: Arcadia Eco Challenge API
+  description: >
+    API for trip telemetry ingestion, driver eco-score calculation,
+    leaderboard ranking, trip metrics, and achievement badges.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local Spring Boot Monolith
+
+  - url: https://api.cv-pilot.azure-api.net
+    description: Azure API Management Gateway
+
+tags:
+  - name: Trip Telemetry
+    description: Trip telemetry ingestion and eco-score calculation
+
+  - name: Driver Eco Score
+    description: Driver eco-score, metrics, ranking, and badges
+
+  - name: Eco Leaderboard
+    description: Driver leaderboard and rankings
+
+
+paths:
+
+  /api/v1/telemetry/trips:
+
+    post:
+      tags:
+        - Trip Telemetry
+
+      summary: Ingest completed trip telemetry
+
+      description: >
+        Ingests driving data at trip conclusion and recalculates the
+        driver's eco score, trip metrics, and badge eligibility.
+
+      operationId: ingestTripTelemetry
+
+      requestBody:
+        required: true
+        content:
+
+          application/json:
+
+            schema:
+              $ref: '#/components/schemas/TripTelemetryRequest'
+
+            examples:
+
+              normalTrip:
+                summary: Completed trip telemetry
+                value:
+                  driverId: user-1042
+                  tripId: trip-5567
+                  distanceKm: 42.6
+                  harshBraking: 2
+                  idleMinutes: 7
+                  accessoryHealth:
+                    tyrePressure: OK
+                    batteryHealth: GOOD
+
+              efficientTrip:
+                summary: Highly efficient trip
+                value:
+                  driverId: user-1042
+                  tripId: trip-5568
+                  distanceKm: 35.2
+                  harshBraking: 0
+                  idleMinutes: 2
+                  accessoryHealth:
+                    tyrePressure: OK
+                    batteryHealth: GOOD
+
+      responses:
+
+        '200':
+          description: Trip ingested and scoring updated
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/EcoScoreResponse'
+
+              example:
+                driverId: user-1042
+                period: 2026-W38
+                ecoScore: 82
+                rank: 7
+                totalDrivers: 120
+                badges:
+                  - SMOOTH_BRAKING
+                  - LOW_IDLE
+                tripMetrics:
+                  totalDistanceKm: 312.4
+                  avgHarshBraking: 1.2
+                  avgIdleMinutes: 5.4
+
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+  /api/v1/drivers/{driverId}/eco-score:
+
+    get:
+      tags:
+        - Driver Eco Score
+
+      summary: Get driver eco score and gauge summary
+
+      description: >
+        Fetches the driver's eco score, relative rank, trip metrics,
+        and unlocked badges for the requested reporting period.
+
+      operationId: getDriverEcoScore
+
+      parameters:
+
+        - name: driverId
+          in: path
+          required: true
+          description: Unique identifier of the driver
+          schema:
+            type: string
+            example: user-1042
+
+        - name: period
+          in: query
+          required: false
+          description: Reporting period for the eco score
+          schema:
+            type: string
+            enum:
+              - WEEKLY
+              - MONTHLY
+              - ALL_TIME
+            default: WEEKLY
+            example: WEEKLY
+
+      responses:
+
+        '200':
+          description: Driver eco score details
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/EcoScoreResponse'
+
+              example:
+                driverId: user-1042
+                period: 2026-W38
+                ecoScore: 82
+                rank: 7
+                totalDrivers: 120
+                badges:
+                  - SMOOTH_BRAKING
+                  - LOW_IDLE
+                tripMetrics:
+                  totalDistanceKm: 312.4
+                  avgHarshBraking: 1.2
+                  avgIdleMinutes: 5.4
+
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+  /api/v1/eco-challenge/leaderboard:
+
+    get:
+      tags:
+        - Eco Leaderboard
+
+      summary: Get top driver leaderboard
+
+      description: >
+        Returns the top driver rankings cached in Redis for fast
+        leaderboard rendering.
+
+      operationId: getLeaderboard
+
+      parameters:
+
+        - name: top
+          in: query
+          required: false
+          description: Number of top-ranked drivers to return
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 10
+            example: 10
+
+      responses:
+
+        '200':
+          description: Ranked leaderboard list
+          content:
+
+            application/json:
+
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+
+              example:
+                period: 2026-W38
+                totalParticipants: 120
+                rankings:
+                  - rank: 1
+                    driverId: user-9021
+                    driverName: Alex Chen
+                    score: 98
+                    badgeCount: 4
+
+                  - rank: 2
+                    driverId: user-7712
+                    driverName: Priya Sharma
+                    score: 96
+                    badgeCount: 5
+
+                  - rank: 3
+                    driverId: user-4431
+                    driverName: Daniel Wong
+                    score: 94
+                    badgeCount: 3
+
+                  - rank: 4
+                    driverId: user-2210
+                    driverName: Sarah Lee
+                    score: 92
+                    badgeCount: 4
+
+                  - rank: 5
+                    driverId: user-5519
+                    driverName: Michael Tan
+                    score: 90
+                    badgeCount: 2
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+components:
+
+  schemas:
+
+    TripTelemetryRequest:
+
+      type: object
+
+      required:
+        - driverId
+        - tripId
+        - distanceKm
+        - harshBraking
+        - idleMinutes
+
+      properties:
+
+        driverId:
+          type: string
+          description: Unique identifier of the driver
+          example: user-1042
+
+        tripId:
+          type: string
+          description: Unique identifier of the completed trip
+          example: trip-5567
+
+        distanceKm:
+          type: number
+          format: double
+          minimum: 0
+          description: Total distance travelled during the trip in kilometres
+          example: 42.6
+
+        harshBraking:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Number of harsh braking events during the trip
+          example: 2
+
+        idleMinutes:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Total vehicle idle time during the trip in minutes
+          example: 7
+
+        accessoryHealth:
+          type: object
+          description: Optional vehicle accessory health information
+          additionalProperties: true
+          example:
+            tyrePressure: OK
+            batteryHealth: GOOD
+
+
+    EcoScoreResponse:
+
+      type: object
+
+      required:
+        - driverId
+        - period
+        - ecoScore
+        - rank
+        - totalDrivers
+        - badges
+        - tripMetrics
+
+      properties:
+
+        driverId:
+          type: string
+          description: Unique identifier of the driver
+          example: user-1042
+
+        period:
+          type: string
+          description: Reporting period represented by this score
+          example: 2026-W38
+
+        ecoScore:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 100
+          description: Driver eco score from 0 to 100
+          example: 82
+
+        rank:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Driver's ranking position
+          example: 7
+
+        totalDrivers:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Total number of drivers included in the ranking
+          example: 120
+
+        badges:
+          type: array
+          description: Achievement badges unlocked by the driver
+          items:
+            type: string
+          example:
+            - SMOOTH_BRAKING
+            - LOW_IDLE
+
+        tripMetrics:
+          $ref: '#/components/schemas/TripMetrics'
+
+
+    TripMetrics:
+
+      type: object
+
+      required:
+        - totalDistanceKm
+        - avgHarshBraking
+        - avgIdleMinutes
+
+      properties:
+
+        totalDistanceKm:
+          type: number
+          format: double
+          minimum: 0
+          description: Total distance travelled during the reporting period
+          example: 312.4
+
+        avgHarshBraking:
+          type: number
+          format: double
+          minimum: 0
+          description: Average number of harsh braking events per trip
+          example: 1.2
+
+        avgIdleMinutes:
+          type: number
+          format: double
+          minimum: 0
+          description: Average idle duration per trip in minutes
+          example: 5.4
+
+
+    LeaderboardResponse:
+
+      type: object
+
+      required:
+        - period
+        - totalParticipants
+        - rankings
+
+      properties:
+
+        period:
+          type: string
+          description: Reporting period represented by the leaderboard
+          example: 2026-W38
+
+        totalParticipants:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Total number of participating drivers
+          example: 120
+
+        rankings:
+          type: array
+          description: Ordered list of ranked drivers
+          items:
+            $ref: '#/components/schemas/DriverRankingItem'
+
+
+    DriverRankingItem:
+
+      type: object
+
+      required:
+        - rank
+        - driverId
+        - driverName
+        - score
+        - badgeCount
+
+      properties:
+
+        rank:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Driver's ranking position
+          example: 1
+
+        driverId:
+          type: string
+          description: Unique identifier of the driver
+          example: user-9021
+
+        driverName:
+          type: string
+          description: Display name of the driver
+          example: Alex Chen
+
+        score:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 100
+          description: Driver eco score
+          example: 98
+
+        badgeCount:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Number of achievement badges unlocked
+          example: 4
+
+
+    ErrorResponse:
+
+      type: object
+
+      required:
+        - errorCode
+        - message
+        - timestamp
+
+      properties:
+
+        errorCode:
+          type: string
+          description: Application-specific error code
+          example: DRIVER_NOT_FOUND
+
+        message:
+          type: string
+          description: Human-readable error message
+          example: Driver user-1042 was not found.
+
+        timestamp:
+          type: string
+          format: date-time
+          description: Time at which the error occurred
+          example: '2026-10-08T10:15:00Z'
+
+
+  responses:
+
+    BadRequestError:
+
+      description: Invalid request payload or validation failed
+
+      content:
+
+        application/json:
+
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+          example:
+            errorCode: INVALID_TELEMETRY
+            message: Trip telemetry contains invalid or missing fields.
+            timestamp: '2026-10-08T10:15:00Z'
+
+
+    NotFoundError:
+
+      description: Requested resource was not found
+
+      content:
+
+        application/json:
+
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+          example:
+            errorCode: DRIVER_NOT_FOUND
+            message: Driver user-1042 was not found.
+            timestamp: '2026-10-08T10:15:00Z'
+
+
+    InternalServerError:
+
+      description: Unexpected server-side error
+
+      content:
+
+        application/json:
+
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+          example:
+            errorCode: INTERNAL_SERVER_ERROR
+            message: An unexpected error occurred while processing the request.
+            timestamp: '2026-10-08T10:15:00Z'

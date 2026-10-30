@@ -42,12 +42,12 @@ The application enforces Domain-Driven Design (DDD) bounded contexts with isolat
 
 | Category | Component / Library |
 | :--- | :--- |
-| **Language & Runtime** | Java 21 (Microsoft OpenJDK / Temurin) |
-| **Framework** | Spring Boot 3.x (Web, Data JPA, Validation, Actuator) |
+| **Language & Runtime** | Java 21 (Microsoft OpenJDK / Temurin)[cite: 1] |
+| **Framework** | Spring Boot 3.x (Web, Data JPA, Validation, Actuator)[cite: 1] |
 | **Primary Database** | PostgreSQL 16 (Logical schema isolation: `auth`, `fleet`, `operations`, `ecodrive`, `maintenance`) |
-| **Database Migrations** | Flyway |
-| **In-Memory Cache & State** | Redis 7 (Command Polling TTLs, Leaderboard `ZSET`, Token Blacklists) |
-| **Security & Contracts** | Spring Security (Stateless JWT / RBAC), OpenAPI 3.0 / Swagger UI |
-| **Testing** | JUnit 5, Mockito, Testcontainers |
+| **Database Migrations** | Flyway[cite: 1] |
+| **In-Memory Cache & State** | Redis 7 (Command Polling TTLs, Leaderboard `ZSET`, Token Blacklists)[cite: 1] |
+| **Security & Contracts** | Spring Security (Stateless JWT / RBAC), OpenAPI 3.0 / Swagger UI[cite: 1] |
+| **Testing** | JUnit 5, Mockito, Testcontainers[cite: 1] |
 
 ---
